@@ -1,32 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
-
-export interface Hero {
-  id: number;
-  nome: string;
-  poder: string;
-  universo: string;
-  ativo: boolean;
-}
-
-export interface NewHero {
-  nome: string;
-  poder: string;
-  universo: string;
-  ativo: boolean;
-}
+import { HeroEntity } from '../domain/hero.entity';
 
 export class HeroRepository {
-  // Caminho seguro até a pasta bd/database.json a partir da raiz do projeto
-  private readonly filePath = path.resolve(
-    process.cwd(),
-    'bd',
-    'database.json',
-  );
+  private readonly filePath = path.resolve(process.cwd(), 'bd', 'database.json');
 
-  // 📂 AUXILIAR: Lê o arquivo e devolve a lista de heróis em memória
-  private readDatabase(): Hero[] {
-    // Se o arquivo ou pasta ainda não existir, cria um arquivo com array vazio '[]'
+  private readDatabase(): HeroEntity[] {
     if (!fs.existsSync(this.filePath)) {
       const dir = path.dirname(this.filePath);
       if (!fs.existsSync(dir)) {
@@ -35,102 +14,64 @@ export class HeroRepository {
       fs.writeFileSync(this.filePath, JSON.stringify([]));
       return [];
     }
+    const data = fs.readFileSync(this.filePath, 'utf-8');
+    const rawArray = JSON.parse(data) as any[];
 
-    // Lê o conteúdo em texto puro (string)
-    const texto = fs.readFileSync(this.filePath, 'utf-8');
-
-    // JSON.parse converte a string de volta em um Array de objetos Hero
-    return JSON.parse(texto) as Hero[];
+    // Instancia objetos reais da classe HeroEntity (incluindo imagemUrl opcional)
+    return rawArray.map(
+      (item) => new HeroEntity(item.id, item.nome, item.poder, item.universo, item.ativo)
+    );
   }
 
-  // 💾 AUXILIAR: Pega a lista atualizada e salva no arquivo do disco
-  private writeDatabase(heroes: Hero[]): void {
-    // JSON.stringify converte o Array em texto formatado com indentação de 2 espaços
-    const textoFormatado = JSON.stringify(heroes, null, 2);
-    fs.writeFileSync(this.filePath, textoFormatado, 'utf-8');
+  private writeDatabase(heroes: HeroEntity[]): void {
+    fs.writeFileSync(this.filePath, JSON.stringify(heroes, null, 2), 'utf-8');
   }
 
-  findAll(): Hero[] {
+  findAll(): HeroEntity[] {
     return this.readDatabase();
   }
 
-  findById(id: number): Hero | undefined {
+  findById(id: number): HeroEntity | undefined {
     const heroes = this.readDatabase();
-
-    const findHero = heroes.find((hero) => hero.id === id);
-    return findHero;
+    return heroes.find((hero) => hero.id === id);
   }
 
-  // Cadastra um novo herói na base de dados
-  create(heroData: NewHero): Hero {
-    // Passo 1: Lê a lista atual de heróis
+  create(nome: string, poder: string, universo: string, ativo: boolean = true, imagemUrl?: string): HeroEntity {
     const heroes = this.readDatabase();
+    // Cálculo do próximo ID simples e direto: pega o último ID e soma 1
+    const ultimoHeroi = heroes[heroes.length - 1];
+    const nextId = ultimoHeroi ? ultimoHeroi.id + 1 : 1;
 
-    // Passo 2: Calcula o próximo ID de forma simples e intuitiva
-    // Pegamos o último herói da lista; se ele existir, o próximo ID será (id + 1).
-    // Se a lista estiver vazia (primeiro cadastro), o ID inicial será 1.
-    const lastHero = heroes[heroes.length - 1];
-    const proximoId = lastHero ? lastHero.id + 1 : 1;
-
-    // Passo 3: Monta o novo herói juntando o novo ID aos dados recebidos
-    const novoHeroi: Hero = {
-      id: proximoId,
-      nome: heroData.nome,
-      poder: heroData.poder,
-      universo: heroData.universo,
-      ativo: heroData.ativo,
-    };
-
-    // Passo 4: Adiciona o herói no array e salva no arquivo database.json
-    heroes.push(novoHeroi);
+    const newHero = new HeroEntity(nextId, nome, poder, universo, ativo);
+    heroes.push(newHero);
     this.writeDatabase(heroes);
 
-    // Retorna o herói cadastrado já com seu novo ID gerado
-    return novoHeroi;
+    return newHero;
   }
 
-  // Atualiza os dados de um herói existente
-  update(id: number, dadosAtualizados: Partial<NewHero>): Hero | null {
-    // Passo 1: Lê a base
+  save(hero: HeroEntity): HeroEntity {
     const heroes = this.readDatabase();
+    const index = heroes.findIndex((h) => h.id === hero.id);
 
-    // Passo 2: Descobre a posição (índice) do herói no array
-    const indice = heroes.findIndex((heroi) => heroi.id === id);
-
-    // Se o índice for -1, significa que o herói com esse ID não existe
-    if (indice === -1) {
-      return null;
+    if (index === -1) {
+      heroes.push(hero);
+    } else {
+      heroes[index] = hero;
     }
 
-    // Passo 3: Atualiza apenas os campos enviados, sem alterar o ID original!
-    // O Object.assign copia as propriedades novas por cima das antigas
-    Object.assign(heroes[indice], dadosAtualizados);
-
-    // Passo 4: Salva a lista modificada no disco e retorna o herói atualizado
     this.writeDatabase(heroes);
-    return heroes[indice];
+    return hero;
   }
 
-  patch(id: number, dadosAtualizados: Partial<NewHero>): Hero | null {
-    return this.update(id, dadosAtualizados);
-  }
-
-  // Remove um herói pelo ID. Retorna true se removeu ou false se não encontrou.
   delete(id: number): boolean {
-    // Passo 1: Lê a base
     const heroes = this.readDatabase();
+    const index = heroes.findIndex((hero) => hero.id === id);
 
-    // Passo 2: Localiza o índice do herói
-    const indice = heroes.findIndex((heroi) => heroi.id === id);
-
-    if (indice === -1) {
-      return false; // Herói não encontrado, não há o que apagar
+    if (index === -1) {
+      return false;
     }
 
-    // Passo 3: Remove 1 elemento exatamente a partir da posição encontrada
-    heroes.splice(indice, 1);
-
-    // Passo 4: Salva a lista sem o item no disco e confirma o sucesso
+    heroes.splice(index, 1);
     this.writeDatabase(heroes);
     return true;
   }
